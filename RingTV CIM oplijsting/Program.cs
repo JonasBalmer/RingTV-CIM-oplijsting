@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -12,6 +13,7 @@ namespace RingTV_CIM_oplijsting
     {
         static string studioLogPath = "E:\\OAStudioLogs";
         static List<String> PrintoutValues = new List<string>();
+        
         static void Main(string[] args)
         {
             Trace.Listeners.Clear();
@@ -26,86 +28,156 @@ namespace RingTV_CIM_oplijsting
             Trace.Listeners.Add(twtl);
             Trace.Listeners.Add(ctl);
             Trace.AutoFlush = true;
+
+            Console.WriteLine("Parsing CSV's");
+
             List<StudioLog> CSVs = GetCSVs(studioLogPath);
-            Trace.WriteLine("Q codes:");
-            Trace.WriteLine("");
-            foreach (string host in PrintoutValues)
-                Trace.WriteLine(host );
-            System.Diagnostics.Debug.WriteLine(PrintoutValues.Count);
-            Trace.WriteLine("");
-            Trace.WriteLine("");
-            Trace.WriteLine("");
-            double numComs = 0;
+
+            Console.WriteLine("Creating CIM objects");
+
+            var YearlyCimList = CIMFactory.GetYearlyCIMS(CSVs);
+            PrintOutput(CSVs);
+            CSVs.Clear();
+            Console.WriteLine("Creating CIM excel sheets");
+            foreach (var yearly in YearlyCimList)
+                foreach (var monthly in CIMFactory.GetMonthlyCIMS(yearly.Value))
+                    foreach (var daily in CIMFactory.GetDailyCIMs(monthly.Value))
+                    {
+                        Directory.CreateDirectory("E:\\" + yearly.Key + "\\" + monthly.Key + "\\");
+                        string filename = "E:\\" + yearly.Key + "\\" + monthly.Key + "\\" + daily.Key + ".xls";
+                        if (!File.Exists(filename))
+                        {
+                            var spreadsheet = CIMSpreadSheetFactory.getSimpleWorkbook(daily.Value);
+                            spreadsheet.SaveAs(filename, Microsoft.Office.Interop.Excel.XlFileFormat.xlWorkbookNormal);
+                            spreadsheet.Close();
+                            Console.WriteLine(daily.Key + ".xls created");
+                        }
+                    }
+
+            CIMSpreadSheetFactory.releaseResources();
+
+            foreach(var list in YearlyCimList)
+                list.Value.Save(new Uri("E:\\test"+list.Key +".xml"));
+
+
+
+            Console.ReadLine();
+
+        }
+
+        private static void PrintOutput(List<StudioLog> CSVs)
+        {
             double numAdvertisers = 0;
             double numEntries = 0;
-            double numFinger = 0;
-            double numExtern = 0;
-            double numRTVM = 0;
-            double numTVOOST = 0;
-            double numKea = 0;
+            Dictionary<string, double> Advertisers = new Dictionary<string, double>();
+            Dictionary<string, double> Codes = new Dictionary<string, double>();
+            Dictionary<string, double> Actions = new Dictionary<string, double>();
+            Dictionary<string, double> BlockTypes = new Dictionary<string, double>();
             int Year = 2011;
-            foreach(var log in CSVs)
+            foreach (var log in CSVs)
             {
-                foreach(var entry in log.entries)
+                foreach (var entry in log.entries)
                 {
-                    if(Year != entry.TimeStamp.Year)
+                    if (Year != entry.TimeStamp.Year)
                     {
                         Trace.WriteLine("");
                         Trace.WriteLine("");
                         Trace.WriteLine(Year);
-                        Trace.WriteLine("");
-                        Trace.WriteLine((int)numComs + " entries with QIRRAP = " + (int)(numComs*100/ numEntries) + "%");
-                        if(numAdvertisers != 0)
+                        Trace.WriteLine("--------------------------------------------------------------------------------------------------------------------");
+                        var SortedAdvertisers = Advertisers.ToList();
+                        SortedAdvertisers.Sort((pair1, pair2) => pair2.Value.CompareTo(pair1.Value));
+                        foreach (var adv in SortedAdvertisers)
                         {
-                            Trace.WriteLine((int)numFinger + " entries with Finger = " + (int)(numFinger * 100 / numAdvertisers) + " % ");
-                            Trace.WriteLine((int)numExtern + " entries with Extern = " + (int)(numExtern * 100 / numAdvertisers) + " % ");
-                            Trace.WriteLine((int)numRTVM + " entries with RTVM = " + (int)(numRTVM * 100 / numAdvertisers) + " % ");
-                            Trace.WriteLine((int)numTVOOST + " entries with TV OOST = " + (int)(numTVOOST * 100 / numAdvertisers) + " % ");
-                            Trace.WriteLine((int)numKea + " entries with KEA = " + (int)(numKea * 100 / numAdvertisers) + " % ");
-                            Trace.WriteLine("Of "+ (int)numAdvertisers + " advertisers = " + (int)(numAdvertisers * 100 / numEntries) + " % ");
+                            Trace.WriteLine((int)adv.Value + " entries with " + adv.Key + " = " + Math.Round((adv.Value) * 100 / numAdvertisers, 2) + " % ");
                         }
-                        Trace.WriteLine("Of " + (int)numEntries + " entries");
+                        Trace.WriteLine("Of " + (int)numAdvertisers + " advertisers = " + Math.Round(numAdvertisers * 100 / numEntries, 2) + " % ");
+                        Trace.WriteLine("");
+                        var SortedActions = Actions.ToList();
+                        SortedActions.Sort((pair1, pair2) => pair2.Value.CompareTo(pair1.Value));
+                        foreach (var act in SortedActions)
+                        {
+                            Trace.WriteLine((int)act.Value + " entries with " + act.Key + " = " + Math.Round((act.Value) * 100 / numAdvertisers, 2) + " % ");
+                        }
+                        Trace.WriteLine("Of " + (int)numEntries + " actions");
+                        Trace.WriteLine("");
+                        var sortedCodes = Codes.ToList();
+                        sortedCodes.Sort((pair1, pair2) => pair2.Value.CompareTo(pair1.Value));
+                        foreach (var code in sortedCodes)
+                        {
+                            Trace.WriteLine((int)code.Value + " entries with " + code.Key + " = " + Math.Round((code.Value) * 100 / numAdvertisers, 2) + " % ");
+                        }
+                        Trace.WriteLine("Of " + (int)numEntries + " codes");
+                        Trace.WriteLine("");
+                        var sortedBlockTypes = BlockTypes.ToList();
+                        sortedBlockTypes.Sort((pair1, pair2) => pair2.Value.CompareTo(pair1.Value));
+                        foreach (var code in sortedBlockTypes)
+                        {
+                            Trace.WriteLine((int)code.Value + " entries with " + code.Key + " = " + Math.Round((code.Value) * 100 / numAdvertisers, 2) + " % ");
+                        }
+                        Trace.WriteLine("Of " + (int)numEntries + " codes");
+                        Trace.WriteLine("");
                         Year = entry.TimeStamp.Year;
-                        numComs = 0;
                         numAdvertisers = 0;
                         numEntries = 0;
-                        numFinger = 0;
-                        numExtern = 0;
-                        numRTVM = 0;
-                        numTVOOST = 0;
-                        numKea = 0;
+                        Advertisers.Clear();
+                        Codes.Clear();
+                        Actions.Clear();
+                        BlockTypes.Clear();
                     }
                     numEntries++;
-                    if (entry.code == "QIRRAP")
-                        numComs++;
-                    if (entry.AdvertiserID == AdvertiserID.EXTERN)
-                        numExtern++;
-                    if (entry.AdvertiserID == AdvertiserID.FINGER)
-                        numFinger++;
-                    if (entry.AdvertiserID == AdvertiserID.TV_OOST)
-                        numTVOOST++;
-                    if (entry.AdvertiserID == AdvertiserID.RTVM)
-                        numRTVM++;
-                    if (entry.AdvertiserID == AdvertiserID.KEA)
-                        numKea++;
-                    if(entry.AdvertiserID != AdvertiserID.NONE)
-                        numAdvertisers++;
+                    if (Codes.ContainsKey(entry.code))
+                        Codes[entry.code]++;
+                    else
+                        Codes.Add(entry.code, 1);
+
+                    if (Advertisers.ContainsKey(entry.AdvertiserID))
+                        Advertisers[entry.AdvertiserID]++;
+                    else
+                        Advertisers.Add(entry.AdvertiserID, 1);
+
+                    if (Actions.ContainsKey(entry.action))
+                        Actions[entry.action]++;
+                    else
+                        Actions.Add(entry.action, 1);
+
+                    if (BlockTypes.ContainsKey(entry.BlokType))
+                        BlockTypes[entry.BlokType]++;
+                    else
+                        BlockTypes.Add(entry.BlokType, 1);
+                    numAdvertisers++;
                 }
             }
             Trace.WriteLine("");
             Trace.WriteLine("");
             Trace.WriteLine(Year);
             Trace.WriteLine("");
-            Trace.WriteLine((int)numComs + " entries with QIRRAP = " + (int)(numComs * 100 / numAdvertisers) + "%");
-            Trace.WriteLine((int)numFinger + " entries with Finger = " + (int)(numFinger * 100 / numAdvertisers) + " % ");
-            Trace.WriteLine((int)numExtern + " entries with Extern = " + (int)(numExtern * 100 / numAdvertisers) + " % ");
-            Trace.WriteLine((int)numRTVM + " entries with RTVM = " + (int)(numRTVM * 100 / numAdvertisers) + " % ");
-            Trace.WriteLine((int)numTVOOST + " entries with TV OOST = " + (int)(numTVOOST * 100 / numAdvertisers) + " % ");
-            Trace.WriteLine((int)numKea + " entries with KEA = " + (int)(numKea * 100 / numAdvertisers) + " % ");
-            Trace.WriteLine("Of " + (int)numAdvertisers + " advertisers = " + (int)(numAdvertisers * 100 / numEntries) + " % ");
-            Trace.WriteLine("Of " + (int)numEntries + " entries");
-            Console.ReadLine();
-
+            foreach (var adv in Advertisers)
+            {
+                Trace.WriteLine((int)adv.Value + " entries with " + adv.Key + " = " + Math.Round(((adv.Value) * 100 / numAdvertisers), 2) + " % ");
+            }
+            Trace.WriteLine("Of " + (int)numAdvertisers + " advertisers = " + Math.Round((numAdvertisers * 100 / numEntries), 2) + " % ");
+            Trace.WriteLine("");
+            foreach (var act in Actions)
+            {
+                Trace.WriteLine((int)act.Value + " entries with " + act.Key + " = " + Math.Round(((act.Value) * 100 / numAdvertisers), 2) + " % ");
+            }
+            Trace.WriteLine("Of " + (int)numEntries + " actions");
+            Trace.WriteLine("");
+            foreach (var code in Codes)
+            {
+                Trace.WriteLine((int)code.Value + " entries with " + code.Key + " = " + Math.Round(((code.Value) * 100 / numAdvertisers), 2) + " % ");
+            }
+            Trace.WriteLine("Of " + (int)numEntries + " codes");
+            Trace.WriteLine("");
+            Trace.WriteLine("");
+            var nsortedBlockTypes = BlockTypes.ToList();
+            nsortedBlockTypes.Sort((pair1, pair2) => pair2.Value.CompareTo(pair1.Value));
+            foreach (var code in nsortedBlockTypes)
+            {
+                Trace.WriteLine((int)code.Value + " entries with " + code.Key + " = " + Math.Round((code.Value) * 100 / numAdvertisers, 2) + " % ");
+            }
+            Trace.WriteLine("Of " + (int)numEntries + " codes");
+            Trace.WriteLine("");
         }
 
         private static List<StudioLog> GetCSVs(string studioLogPath)
@@ -113,169 +185,15 @@ namespace RingTV_CIM_oplijsting
             List<StudioLog> response = new List<StudioLog>();
             foreach(string filePath in System.IO.Directory.GetFiles(studioLogPath))
             {
-                //Console.WriteLine(filePath);
-                response.Add(ParseLog(filePath));
+                var studiolog = StudioLog.ParseCSV(filePath);
+                response.Add(studiolog);
             }
-            return response;
-        }
-
-        private static StudioLog ParseLog(string filePath)
-        {
-            StudioLog response = new StudioLog();
-            System.IO.StreamReader streamReader = new System.IO.StreamReader(filePath);
-            while (!streamReader.EndOfStream)
-            {
-                string line = streamReader.ReadLine();
-                LogEntry entry = new LogEntry();
-                entry= ParseEntry(line.Split(new char[]{','}));
-                if(entry != null)
-                    response.entries.Add(entry);                
-            }
-            return response;
-        }
-
-        private static LogEntry ParseEntry(string[] values)
-        {
-            LogEntry response = new LogEntry();
-            response.values = values;
-
-            if(!System.Net.IPAddress.TryParse(values[0], out response.IP))
-            {
-                System.Diagnostics.Debug.Fail("No valid IP");
-            }
-
-
-            if(!ParseDate(values[1], out response.TimeStamp))
-            {
-                string value;
-                response.HOST = values[1];
-                //if(values.Length ==11)
-
-                if(!Uri.TryCreate(values[4], UriKind.RelativeOrAbsolute,out response.file))
-                    System.Diagnostics.Debug.Fail("No valid File");
-
-                if (!DateTime.TryParse(values[5],out response.TimeStamp))
-                    System.Diagnostics.Debug.Fail("No valid Date");
-
-                if(!TimeSpan.TryParse(values[6], out response.AirTime))
-                    System.Diagnostics.Debug.Fail("No valid TimeStamp");
-
-                response.setAction(values[7]);
-                response.title = values[8].Trim();
-                if(values.Length == 11)
-                    response.code = "NONE";
-                else if(values.Length == 12)
-                {
-                    value = values[9].ToUpper().Trim();
-                    response.code = value;
-                    if (response.code == "")
-                        response.code = "NONE";
-
-                    if (response.action != entryAction.SKIPPED)
-                    {
-                        TimeSpan timeSpan;
-                        value = values[10];
-                        if (value == "")
-                        {
-                            value = values[9];
-                            response.code = "NONE";
-                        }
-                        if (!TimeSpan.TryParse(value.Substring(0, 8), out timeSpan))
-                        {
-                            System.Diagnostics.Debug.Fail("No valid TimeStamp");
-                        }
-                        else
-                        {
-                            response.inpoint = timeSpan;
-                        }
-
-                    }
-                    if (response.code.Substring(0, 1) != "Q" && response.code != "NONE")
-                    {
-                        response.code = "NONE";
-                    }
-                }
-                else if (values.Length == 15)
-                {
-                    value = values[9].ToUpper().Trim();
-                    if (values[9].Substring(0, 1) == "Q")
-                        response.code = value;
-                    else
-                        response.SetAdvertiserId(value);
-                    response.SetBlokType(values[11]);
-                    value = values[12];
-                    if (value.Length < 8)
-                        value = values[13];
-
-                }
-                else if (values.Length == 14)
-                {
-                    value = values[12];
-                    if (value.Length < 8)
-                        value = values[13];
-
-                }
-                else 
-                {
-                    System.Diagnostics.Debug.WriteLine(values.Length);
-                }
-                if (response.title.ToUpper().Contains("KEA"))
-                    response.AdvertiserID = AdvertiserID.KEA;
-                if (response.title.ToUpper().Contains("EXTERN"))
-                    response.AdvertiserID = AdvertiserID.EXTERN;
-                if (response.title.ToUpper().Contains("FING"))
-                    response.AdvertiserID = AdvertiserID.FINGER;
-                if (response.title.ToUpper().Contains("FINGER"))
-                    response.AdvertiserID = AdvertiserID.FINGER;
-                if (response.title.ToUpper().Contains("RTVM"))
-                    response.AdvertiserID = AdvertiserID.RTVM;
-                if (response.title.ToUpper().Contains("TV OOST"))
-                    response.AdvertiserID = AdvertiserID.TV_OOST;
-            }
-            else
-            {
-                return null;
-            }
-            
-
-            if(response.title.Contains("(") && response.title.Contains(")"))
-            {
-                int indexLeft = response.title.LastIndexOf("(")+1;
-                int indexRight = response.title.LastIndexOf(")");/*
-                if (response.title.EndsWith("(Kea"))
-                   // response.AdvertiserID = "KEA";
-                else
-                    //response.AdvertiserID = response.title.Substring(indexLeft, indexRight - indexLeft).ToUpper(); ;
-                if (response.AdvertiserID.Contains("IDEM"))
-                    //response.AdvertiserID = "";*/
-            }
-            if (!PrintoutValues.Contains(response.code))
-                PrintoutValues.Add(response.code);
 
             return response;
         }
 
-        private static bool ParseDate(string input, out DateTime timeStamp)
-        {
-            timeStamp = new DateTime();
-            int Year, Month, Day, Hour, Minute, Second;
-            if (input.Length != 22)
-                return false;
-            if (!int.TryParse(input.Substring(0, 4), out Year))
-                return false;
-            if (!int.TryParse(input.Substring(5, 2), out Month))
-                return false;
-            if (!int.TryParse(input.Substring(8, 2), out Day))
-                return false;
-            if (!int.TryParse(input.Substring(11, 2), out Hour))
-                return false;
-            if (!int.TryParse(input.Substring(14, 2), out Minute))
-                return false;
-            if (!int.TryParse(input.Substring(17, 2), out Second))
-                return false;
-            timeStamp = new DateTime(Year, Month, Day, Hour, Minute, Second);
-            return true;
-        }
+
+
     }
 
 }
